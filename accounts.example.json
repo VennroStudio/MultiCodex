@@ -1,0 +1,14 @@
+{
+  "primary": "main",
+  "accounts": {
+    "main": {
+      "codex_home": "${HOME}/.codex"
+    },
+    "personal": {
+      "codex_home": "${HOME}/.codex-work",
+      "ui_dir": "${HOME}/Library/Application Support/Codex-work"
+    },
+    "client-one": {},
+    "client-two": {}
+  }
+}
