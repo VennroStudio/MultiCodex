@@ -8,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 
+if sys.platform == "linux":
+    import linux_profiles
+
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 HELP = """MultiCodex
@@ -19,7 +22,7 @@ HELP = """MultiCodex
   make status                       Показать настроенные аккаунты
 
 Аккаунты задаются в accounts.json, общие пути в .env.
-Перед setup и sync полностью закрой все окна ChatGPT через ⌘Q.
+Перед setup и sync полностью выйди из ChatGPT через Ctrl+Q на Linux или ⌘Q на macOS.
 """
 
 
@@ -92,6 +95,17 @@ def prepare_project_state(codex_home):
             temporary.unlink(missing_ok=True)
 
 
+def state_database(primary_home):
+    configured = os.environ.get("STATE_DATABASE")
+    if configured:
+        return path_value(configured)
+    if sys.platform == "linux":
+        database = linux_profiles.latest_database(primary_home, "state")
+        if database is not None:
+            return database
+    raise ValueError("Не найдена общая база проектов. Проверь STATE_DATABASE в .env.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="MultiCodex account launcher")
     parser.add_argument("action", choices=("help", "status", "launch", "setup", "sync", "preview"), nargs="?", default="help")
@@ -122,13 +136,18 @@ def main():
             sys.executable, str(PROJECT_DIR / "scripts/sync_projects.py"),
             "--source-home", str(accounts[args.from_account]["codex_home"]),
             "--target-home", str(accounts[args.to_account]["codex_home"]),
-            "--database", str(path_value(os.environ["STATE_DATABASE"])),
+            "--database", str(state_database(accounts[primary]["codex_home"])),
         ]
         if args.action == "sync":
             command.append("--apply")
         return subprocess.call(command)
 
     app = path_value(os.environ["CHATGPT_APP"])
+    if sys.platform == "linux":
+        return linux_profiles.launch(
+            app, args.account, accounts[args.account], accounts[primary],
+            state_database(accounts[primary]["codex_home"]), setup=args.action == "setup",
+        )
     if args.account == primary:
         if args.action == "setup":
             require_closed()

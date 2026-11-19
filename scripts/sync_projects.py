@@ -6,7 +6,11 @@ from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
+
+if sys.platform == "linux":
+    import linux_profiles
 
 
 STATE_FILE = ".codex-global-state.json"
@@ -68,18 +72,28 @@ def main():
     args = parser.parse_args()
     source_home = args.source_home.expanduser().resolve()
     target_home = args.target_home.expanduser().resolve()
-    direction = f"{source_home.name} -> {target_home.name}"
-    if source_home.resolve() == target_home.resolve():
+    if source_home == target_home:
         parser.error("Источник и назначение должны быть разными профилями.")
-    if args.apply:
-        processes = subprocess.check_output(["/bin/ps", "-axo", "comm="], text=True).splitlines()
-        if any(line.strip().endswith(("/Contents/MacOS/ChatGPT", "/Contents/MacOS/Codex")) for line in processes):
-            parser.exit(1, "Сначала полностью закрой оба окна ChatGPT/Codex через ⌘Q.\n")
+    database = args.database.expanduser().resolve()
+    if args.apply and sys.platform == "linux":
+        app = Path(os.environ.get("CHATGPT_APP", "/usr/bin/chatgpt")).expanduser()
+        with linux_profiles.history_lock(database):
+            linux_profiles.require_closed(app)
+            sync(parser, source_home, target_home, database, apply=True)
+    else:
+        if args.apply:
+            processes = subprocess.check_output(["/bin/ps", "-axo", "comm="], text=True).splitlines()
+            if any(command.strip().endswith(("/Contents/MacOS/ChatGPT", "/Contents/MacOS/Codex"))
+                   for command in processes):
+                parser.exit(1, "Сначала полностью закрой оба окна ChatGPT/Codex через ⌘Q.\n")
+        sync(parser, source_home, target_home, database, apply=args.apply)
 
+
+def sync(parser, source_home, target_home, primary_db, *, apply):
+    direction = f"{source_home.name} -> {target_home.name}"
     source_path, path = source_home / STATE_FILE, target_home / STATE_FILE
     if any(state.is_symlink() or not state.is_file() for state in (source_path, path)):
         parser.exit(1, "Ожидались отдельные файлы настроек двух профилей.\n")
-    primary_db = args.database.expanduser().resolve()
     if not primary_db.is_file() or any(
         not (profile / primary_db.name).is_file()
         or (profile / primary_db.name).resolve() != primary_db.resolve()
@@ -87,7 +101,8 @@ def main():
     ):
         parser.exit(1, "Не найдена ожидаемая общая база проектов.\n")
 
-    source = json.loads(source_path.read_bytes())
+    source_bytes = source_path.read_bytes()
+    source = json.loads(source_bytes)
     if not isinstance(source, dict):
         parser.exit(1, "Некорректный формат настроек источника.\n")
     target_bytes = path.read_bytes()
@@ -100,13 +115,15 @@ def main():
     updated = restore_metadata(source, target, source_home, target_home, project_ids)
     print(f"{direction}. Проекты: {len(updated.get('local-projects', {}))}. "
           f"Сохранённые привязки: {len(updated['thread-project-assignments'])}.")
-    if not args.apply:
+    if not apply:
         print("Режим проверки. Файлы не изменены.")
         return
     if updated == target:
         print("Все настройки уже присутствуют.")
         return
-    if path.read_bytes() != target_bytes:
+    if sys.platform == "linux":
+        linux_profiles.require_closed(Path(os.environ.get("CHATGPT_APP", "/usr/bin/chatgpt")).expanduser())
+    if path.read_bytes() != target_bytes or source_path.read_bytes() != source_bytes:
         parser.exit(1, "Файл настроек изменился во время проверки. Запусти команду снова.\n")
 
     backup_dir = Path(tempfile.mkdtemp(prefix="project-sidebar-backup-", dir=target_home))
@@ -126,4 +143,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (OSError, ValueError, sqlite3.Error) as error:
+        sys.exit(f"Ошибка: {error}")
