@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -68,6 +69,29 @@ def require_closed():
         raise ValueError("Полностью закрой все окна ChatGPT/Codex через ⌘Q и повтори команду.")
 
 
+def prepare_project_state(codex_home):
+    path = codex_home / ".codex-global-state.json"
+    if not path.is_symlink() and path.is_file():
+        return
+    if path.exists() and not path.is_file():
+        raise ValueError(f"Ожидался файл настроек проектов: {path}")
+    # Detach links left by older setup versions without writing through them.
+    data = path.read_bytes() if path.is_symlink() else b"{}\n"
+    if not isinstance(json.loads(data), dict):
+        raise ValueError(f"Некорректный формат настроек проектов: {path}")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=codex_home, delete=False) as output:
+            temporary = Path(output.name)
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description="MultiCodex account launcher")
     parser.add_argument("action", choices=("help", "status", "launch", "setup", "sync", "preview"), nargs="?", default="help")
@@ -122,11 +146,14 @@ def main():
         "--secondary-home", str(account["codex_home"]),
         "--profile-dir", str(account["ui_dir"]),
     ]
-    if args.action == "setup":
-        command.append("--symlink-history")
     env = dict(os.environ)
     env["CODEX_ELECTRON_USER_DATA_PATH"] = str(account["ui_dir"])
     env["CODEX_MULTI_REGISTRY_DIR"] = str(path_value(os.environ["REGISTRY_DIR"]))
+    if args.action == "setup":
+        result = subprocess.call(command + ["--symlink-history", "--no-launch"], env=env)
+        if result:
+            return result
+        prepare_project_state(account["codex_home"])
     return subprocess.call(command, env=env)
 
 

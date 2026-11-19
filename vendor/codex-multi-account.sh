@@ -65,8 +65,8 @@ Options:
                             Cannot be combined with --accounts.
   --app PATH                ChatGPT.app or Codex.app path. Default: auto-detect.
   --codex-app PATH          Legacy alias for --app.
-  --symlink-history         Opt in to sharing project/sidebar history with the
-                            primary Codex profile via symlinks. Unsupported.
+  --symlink-history         Opt in to sharing chat history with the primary
+                            Codex profile via symlinks. Project lists stay separate.
   --reset                   Remove generated secondary Codex homes/profiles,
                             then exit. With no account flags, remove every
                             managed instance created by this script.
@@ -739,7 +739,8 @@ setup_current_account() {
       backup_secondary_home "$backup_path"
     fi
 
-    share_file_if_present ".codex-global-state.json"
+    # MultiCodex keeps project/sidebar settings separate so make sync can
+    # transfer them without sharing account-specific desktop settings.
     share_db_family "state" "state DB"
     # Newer builds keep conversation turns/items here; without it shared
     # threads appear in the sidebar but open empty.

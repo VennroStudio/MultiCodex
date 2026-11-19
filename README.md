@@ -9,7 +9,7 @@ cd /MultiCodex
 | Команда | Действие |
 | --- | --- |
 | `make launch ACCOUNT=personal` | Открыть указанный аккаунт |
-| `make setup ACCOUNT=client-one` | Первый запуск нового аккаунта с общей историей |
+| `make setup ACCOUNT=client-one` | Первый запуск: общие чаты, отдельные проекты и вход |
 | `make sync FROM=personal TO=main` | Перенести проекты и привязки из `FROM` в `TO` |
 | `make sync FROM=main TO=personal` | Перенести в обратном направлении |
 | `make preview FROM=personal TO=main` | Проверить перенос без записи |
